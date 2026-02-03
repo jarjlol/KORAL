@@ -3,7 +3,8 @@
 KORAL is a **two-stage pipeline** for SSD operational analysis:
 
 - **Stage I (Literature KG):** Extract an **evidence-backed knowledge graph** from SSD research papers, aligned to a curated SSD taxonomy.
-- **Stage II (Operational Analysis):** Summarize telemetry (SMART, workload, environment, etc.) using a rule base, retrieve relevant literature evidence from the Stage I KG, and call an LLM to perform SSD analysis (predictive / descriptive / prescriptive / what-if) with automatic evaluation.
+- **Stage II (Operational Analysis):** Summarize telemetry (SMART, workload, environment, etc.) using a rule base, retrieve relevant literature evidence from the Stage I KG, and call an LLM to perform SSD analysis (**predictive / descriptive / prescriptive / what-if**) with automatic evaluation.
+- **Stage II Fleet Mode (Table II):** Run **collective / fleet-level analysis** over a cohort (e.g., **100 drives at once**) and compute fleet metrics.
 
 ---
 
@@ -13,15 +14,31 @@ KORAL is a **two-stage pipeline** for SSD operational analysis:
 KORAL/
 ├─ data_preparation/                  # Data prep scripts (Alibaba/Google/env/workload)
 ├─ dataset/                           # Datasets (Alibaba, Google, env, fio_workload, ...)
-├─ stage_I/                           # Stage I: paper→KG pipeline
-│  ├─ out/                             # default Stage I outputs (TTL/JSON/global KG)
+├─ stage_I/                           # Stage I: paper → LitKG pipeline
+│  ├─ out/                            # Stage I outputs (TTL/JSON/global KG)
 │  ├─ __init__.py
-│  ├─ ssd_cot_prompt.txt               # Stage I extraction prompt (strict JSON)
-│  ├─ ssd_kg_pipeline.py               # Stage I pipeline (papers → TTL/JSON/global KG)
-│  └─ taxonomy.json                    # SSD taxonomy (vocabulary)
+│  ├─ ssd_cot_prompt.txt              # Stage I extraction prompt (strict JSON)
+│  ├─ ssd_kg_pipeline.py              # Stage I pipeline (papers → TTL/JSON/global KG)
+│  └─ taxonomy.json                   # SSD taxonomy (vocabulary)
 ├─ stage_II/                          # Stage II: operational pipeline + evaluation
+│  ├─ evaluation/
+│  ├─ features/
+│  ├─ kg/
+│  ├─ llm/
+│  ├─ prompts/
+│  ├─ scripts/
+│  ├─ utils/
+│  ├─ cli.py                          # per-sample Stage II CLI (Table I style)
+│  ├─ pipeline.py                     # per-sample pipeline runner
+│  ├─ fleet_cli.py                    # fleet-level Stage II CLI (Table II style)
+│  ├─ fleet_pipeline.py               # fleet-level runner
+│  ├─ config.py
+│  ├─ README.md                       # stage II overview (optional)
+│  └─ README_STAGE_II.txt             # stage II detailed text readme
 └─ rule_base.json                     # Stage II rule base (summarization/mapping rules)
 ```
+
+---
 
 ## Installation
 
@@ -58,14 +75,6 @@ Stage I reads a **folder of papers** (`.pdf`, `.txt`, `.md`) and produces:
 - **taxonomy**: `stage_I/taxonomy.json`
 - **prompt**: `stage_I/ssd_cot_prompt.txt`
 
-The prompt enforces:
-- taxonomy-first mapping,
-- class vs instance distinction,
-- explicit context (SSD ↔ environment/workload),
-- directional effects (`improves` / `degrades`) with evidence and confidence,
-- optional new concept proposals.  
-(See `stage_I/ssd_cot_prompt.txt`.)
-
 ## Configure prompt paths
 
 `stage_I/ssd_kg_pipeline.py` defaults to reading the prompt from `prompts/ssd_cot_prompt.txt`.
@@ -75,8 +84,6 @@ Since this repo keeps the prompt inside `stage_I/`, set:
 export KG_PROMPT_PATH="stage_I/ssd_cot_prompt.txt"
 export KG_PROMPT_ADDENDA_PATH="stage_I/out/ssd_prompt_addenda_auto.txt"
 ```
-
-- `KG_PROMPT_ADDENDA_PATH` is optional. If enabled, Stage I appends “concept mapping hints” for future runs.
 
 ## Run Stage I
 
@@ -92,8 +99,6 @@ python stage_I/ssd_kg_pipeline.py \
 
 ### Outputs (Stage I)
 
-After the run you should see:
-
 ```text
 stage_I/out/
 ├─ <paper_slug>.ttl
@@ -101,58 +106,29 @@ stage_I/out/
 └─ global_knowledge_graph.ttl
 ```
 
-Stage I **merges** the current run into `stage_I/out/global_knowledge_graph.ttl` (it does not overwrite/erase prior knowledge).
+Stage I **merges** the current run into `stage_I/out/global_knowledge_graph.ttl`.
 
 ---
 
-# Data preparation
+# Data preparation (Alibaba / Google / Workload)
 
 This repo includes scripts that prepare Alibaba and Google datasets and create test CSVs.
-Place them under `data_preparation/` and keep datasets under `dataset/`.
+Place data prep code under `data_preparation/` and keep datasets under `dataset/`.
 
-## Alibaba (SMART)
-
-Expected raw layout:
-
-```text
-dataset/alibaba/
-├─ smartlog2018ssd/   # daily files
-└─ smartlog2019ssd/   # daily files
-```
-
-Typical steps used in our pipeline:
-
-1. Filter by model family (MA1/MA2/MB1/MB2/MC1/MC2).
-2. Keep the 19 SMART features + `disk_id` + `ds`.
-3. Drop model-specific missing attributes (keep `disk_id`, `ds`).
-4. Build labeled test samples using `ssd_failure_tag.csv` and a 30-day failure window (for SMART-based datasets).
-
-## Google (SMART)
-
-Expected raw layout:
-
-```text
-dataset/google/raw_data/
-```
-
-We do not filter by model; we build labels + (optional) 30-day history windows following the dataset release and our pipeline assumptions.
-
-## Environment and workload
-
-- **Environment effects** (from papers): `dataset/env/env_effects.csv`
-- **FIO workloads** (samples/configs): `dataset/fio_workload/`
+For Table II fleet evaluation, you only need these **three prepared datasets**:
+- **Alibaba SMART** (no `app`)
+- **Google SMART**
+- **SMART + Workload** (Alibaba with `app`)
 
 ---
 
-# Stage II: Operational analysis + evaluation (telemetry → prompts → metrics)
+# Stage II: Per-sample analysis (Table I style)
 
-Stage II consumes one **input CSV** (SMART-only or multi-modal) and produces:
-
-- LLM prompts & responses (saved),
-- extracted decisions/labels,
-- evaluation metrics:
-  - **Predictive**: precision / recall / accuracy
-  - **Descriptive / Prescriptive / What-if**: B4, RL, FiP, CFV (as configured in evaluation modules)
+Stage II consumes one **input CSV** and produces per-sample:
+- prompts,
+- LLM responses,
+- parsed outputs,
+- metrics (predictive + text overlap + grounding).
 
 ## Stage II prerequisites: copy KG + taxonomy to repo root
 
@@ -162,35 +138,16 @@ By default, Stage II looks for these files in the **repo root**:
 - `global_knowledge_graph.ttl`
 - `rule_base.json`
 
-If you ran Stage I using `stage_I/taxonomy.json` and `stage_I/out/global_knowledge_graph.ttl`,
-copy (or symlink) them:
+If you ran Stage I, copy:
 
 ```bash
 cp stage_I/taxonomy.json taxonomy.json
 cp stage_I/out/global_knowledge_graph.ttl global_knowledge_graph.ttl
 ```
 
-## Dataset types
+## Run Stage II (per-sample)
 
-Stage II is driven by a `dataset_type` name. Common options:
-
-- `SMART_ALIBABA` — SMART-only (Alibaba, no app)
-- `SMART_GOOGLE` — SMART-only (Google)
-- `ENV` — environment-only effects
-- `SMART_WORKLOAD` — SMART + workload (Alibaba with `app`)
-- `SMART_ENV` — SMART + env
-- `WORKLOAD_ENV` — workload + env
-- `SMART_ENV_WORKLOAD` — SMART + env + workload
-- `SMART_FT` — SMART + flash-type column (e.g., SLC/TLC/QLC)
-- `SMART_AL` — SMART + controller policy columns (GC algo, WL policy, etc.)
-- `SMART_FT_ENV_WORKLOAD` — SMART + flash-type + env + workload
-
-> You can generate these CSVs using the dataset generator script in `data_preparation/`
-(e.g., `stage2_pair_dataset_generator.py`).
-
-## Run Stage II (CLI)
-
-Example: run all tasks on a given dataset:
+Example:
 
 ```bash
 python -m stage_II.cli \
@@ -198,64 +155,86 @@ python -m stage_II.cli \
   --input_csv dataset/alibaba/test_data/smart.csv \
   --tasks predictive,descriptive,prescriptive,whatif \
   --model gpt-4o \
+  --limit_rows 100 \
   --out_name demo_smart_alibaba
 ```
 
-Debug a small run:
-
-```bash
-python -m stage_II.cli \
-  --dataset_type ENV \
-  --input_csv dataset/env/env_effects.csv \
-  --tasks descriptive,whatif \
-  --limit_rows 50 \
-  --out_name demo_env_50
-```
-
-### Stage II outputs
-
-Each run writes a folder under:
+Outputs go to:
 
 ```text
-stage_II/runs/<run_name>/
-├─ inputs/               # normalized rows used for prompts
-├─ prompts/              # full prompts sent to the LLM
-├─ responses/            # raw LLM responses (JSON where possible)
-├─ parsed/               # parsed outputs (labels/decisions/justifications)
-├─ metrics/              # metrics summaries (JSON/CSV)
-└─ logs/                 # run logs
+stage_II/runs/<RUN_NAME>/
+  input_samples.csv
+  responses.jsonl
+  metrics_per_sample.csv
+  metrics_summary.json
+  data_kg_ttl/<sample_id>.ttl   (if rdflib available)
 ```
 
 ---
 
-## Ontology & KG examples
+# Stage II Fleet Mode: Collective analysis (Table II style)
 
-Stage I and Stage II share a consistent “classes vs instances” design:
+Fleet mode evaluates **a cohort of N drives at once** (e.g., N=100).
 
-- **Classes** come from the taxonomy (e.g., `Temperature`, `IOPS`, `TLC`, `Garbage Collection`).
-- **Instances** represent paper-specific or scenario-specific objects (e.g., `SSD_X`, `EC1`, `WP1`, `EXP1`).
+### Supported datasets (as requested)
+- `SMART_ALIBABA`
+- `SMART_GOOGLE`
+- `SMART_WORKLOAD`
 
-Common relation patterns you’ll see in the Literature KG (Stage I) and Data KG (Stage II):
+Fleet mode expects the input CSV to contain one row per drive (or it will de-duplicate by `disk_id/drive_id` when possible).
 
-- `SSD_X operatesUnder EC1`
-- `EC1 hasTemperature {"@value": 45, "unit": "C"}`
-- `EC1 hasWorkloadProfile WP1`
-- `WP1 hasReadWriteMix "Write-Heavy"`
-- `Temperature degrades 99th Percentile Latency` (directional effect)
-- `Workload impactsMetric Latency`
-- Assertions always carry **evidence text** and a **confidence** score.
+## Run fleet evaluation (one dataset)
+
+Example (100-drive cohorts, 5 cohorts):
+
+```bash
+python -m stage_II.fleet_cli \
+  --dataset_type SMART_ALIBABA \
+  --input_csv dataset/alibaba/test_data/smart.csv \
+  --tasks predictive,descriptive,prescriptive,whatif \
+  --cohort_size 100 \
+  --num_cohorts 5 \
+  --out_name fleet_alibaba_100x5
+```
+
+Fleet outputs go to:
+
+```text
+stage_II/runs/<RUN_NAME>/
+  cohort_composition.csv
+  responses_fleet.jsonl
+  metrics_fleet.csv
+  metrics_summary_fleet.json
+  fleet_kg_ttl/<cohort_id>.ttl   (if rdflib available)
+```
+
+## Generate Table II CSV (all 3 datasets)
+
+Use the script under `stage_II/scripts/`:
+
+```bash
+python stage_II/scripts/run_table2_fleet.py \
+  --alibaba_csv dataset/alibaba/test_data/smart.csv \
+  --google_csv dataset/google/test_data/smart.csv \
+  --workload_csv dataset/alibaba/test_data/smart_workload.csv \
+  --cohort_size 100 \
+  --num_cohorts 5 \
+  --out_name table2_fleet
+```
+
+This writes:
+- `stage_II/runs/table2_fleet/table_II_fleet_results.csv`
+- and per-dataset fleet run folders under `stage_II/runs/table2_fleet/` (or nested depending on script settings).
 
 ---
 
 ## Citation
 
-If you use this repository in academic work, please cite:
-
 ```bibtex
 @inproceedings{AkewarEtAl_IPDPS_2026,
   author    = {Akewar, Mayur and Madireddy, Sandeep and Luo, Dongsheng and Bhimani, Janki},
   title     = {KORAL: Knowledge Graph Guided LLM Reasoning for SSD Operational Analysis},
-  booktitle = {IEEE International Parallel \& Distributed Processing Symposium (IPDPS)},
+  booktitle = {IEEE International Parallel \\& Distributed Processing Symposium (IPDPS)},
   year      = {2026},
   note      = {To appear}
 }
