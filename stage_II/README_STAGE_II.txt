@@ -4,8 +4,8 @@ KORAL Stage II
 This package provides Stage II pipeline for SSD operational analysis.
 
 Stage II has TWO modes:
-  (A) Per-sample mode (Table I style): analyze one drive/window at a time.
-  (B) Fleet mode (Table II style): analyze a cohort (e.g., 100 drives) in a single call.
+  (A) Per-sample mode (Table I): analyze one drive/window at a time.
+  (B) Fleet mode (Table II): analyze a cohort (e.g., 100 drives) in a single call.
 
 ------------------------------------------------
 A) Per-sample mode (Table I style)
