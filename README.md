@@ -33,7 +33,7 @@ KORAL/
 │  ├─ fleet_cli.py                    # fleet-level Stage II CLI (Table II style)
 │  ├─ fleet_pipeline.py               # fleet-level runner
 │  ├─ config.py
-│  ├─ README.md                       # stage II overview (optional)
+│  ├─ README.md                       # stage II overview
 │  └─ README_STAGE_II.txt             # stage II detailed text readme
 └─ rule_base.json                     # Stage II rule base (summarization/mapping rules)
 ```
@@ -122,7 +122,7 @@ For Table II fleet evaluation, you only need these **three prepared datasets**:
 
 ---
 
-# Stage II: Per-sample analysis (Table I style)
+# Stage II: Per-sample analysis
 
 Stage II consumes one **input CSV** and produces per-sample:
 - prompts,
@@ -172,7 +172,7 @@ stage_II/runs/<RUN_NAME>/
 
 ---
 
-# Stage II Fleet Mode: Collective analysis (Table II style)
+# Stage II Fleet Mode: Collective analysis
 
 Fleet mode evaluates **a cohort of N drives at once** (e.g., N=100).
 
@@ -225,6 +225,27 @@ python stage_II/scripts/run_table2_fleet.py \
 This writes:
 - `stage_II/runs/table2_fleet/table_II_fleet_results.csv`
 - and per-dataset fleet run folders under `stage_II/runs/table2_fleet/` (or nested depending on script settings).
+
+---
+
+---
+
+## Ontology & KG examples
+
+Stage I and Stage II share a consistent “classes vs instances” design:
+
+- **Classes** come from the taxonomy (e.g., `Temperature`, `IOPS`, `TLC`, `Garbage Collection`).
+- **Instances** represent paper-specific or scenario-specific objects (e.g., `SSD_X`, `EC1`, `WP1`, `EXP1`).
+
+Common relation patterns you’ll see in the Literature KG (Stage I) and Data KG (Stage II):
+
+- `SSD_X operatesUnder EC1`
+- `EC1 hasTemperature {"@value": 45, "unit": "C"}`
+- `EC1 hasWorkloadProfile WP1`
+- `WP1 hasReadWriteMix "Write-Heavy"`
+- `Temperature degrades 99th Percentile Latency` (directional effect)
+- `Workload impactsMetric Latency`
+- Assertions always carry **evidence text** and a **confidence** score.
 
 ---
 
