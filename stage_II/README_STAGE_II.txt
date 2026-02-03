@@ -1,7 +1,7 @@
-KORAL Stage II (Modular) - Generated Code Package
+KORAL Stage II
 ================================================
 
-This package provides a modular Stage II pipeline that:
+This package provides Stage II pipeline that:
 1) Reads a prepared input CSV (SMART / SMART+Workload / SMART+Env / etc.)
 2) Builds an Intermediate Representation (IR) for SMART + optional modalities
 3) Materializes a lightweight DataKG artifact per sample (TTL if rdflib is available)

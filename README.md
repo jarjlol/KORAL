@@ -23,10 +23,6 @@ KORAL/
 └─ rule_base.json                     # Stage II rule base (summarization/mapping rules)
 ```
 
-> Tip: If you see `.DS_Store` committed, add it to `.gitignore`.
-
----
-
 ## Installation
 
 Create a fresh environment (recommended) and install dependencies:
@@ -70,7 +66,7 @@ The prompt enforces:
 - optional new concept proposals.  
 (See `stage_I/ssd_cot_prompt.txt`.)
 
-## Configure prompt paths (important)
+## Configure prompt paths
 
 `stage_I/ssd_kg_pipeline.py` defaults to reading the prompt from `prompts/ssd_cot_prompt.txt`.
 Since this repo keeps the prompt inside `stage_I/`, set:
@@ -109,7 +105,7 @@ Stage I **merges** the current run into `stage_I/out/global_knowledge_graph.ttl`
 
 ---
 
-# Data preparation (telemetry → model-ready CSVs)
+# Data preparation
 
 This repo includes scripts that prepare Alibaba and Google datasets and create test CSVs.
 Place them under `data_preparation/` and keep datasets under `dataset/`.
@@ -137,9 +133,6 @@ Expected raw layout:
 
 ```text
 dataset/google/raw_data/
-├─ badchip.csv
-├─ swaplog.csv
-└─ errorlog.csv
 ```
 
 We do not filter by model; we build labels + (optional) 30-day history windows following the dataset release and our pipeline assumptions.
@@ -177,7 +170,7 @@ cp stage_I/taxonomy.json taxonomy.json
 cp stage_I/out/global_knowledge_graph.ttl global_knowledge_graph.ttl
 ```
 
-## Dataset types (Table 1 style)
+## Dataset types
 
 Stage II is driven by a `dataset_type` name. Common options:
 
@@ -235,7 +228,7 @@ stage_II/runs/<run_name>/
 
 ---
 
-## Ontology & KG examples (quick mental model)
+## Ontology & KG examples
 
 Stage I and Stage II share a consistent “classes vs instances” design:
 
