@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# KORAL run outputs (regenerated, can be large)
+stage_II/runs/
+
+# Large data files (not tracked in git)
+*.csv
+!dataset/**/*.csv
+
+# Knowledge graph generated files
+*.ttl
+
+# Logs
+*.log
+
+# RocksDB / experiment files (live in kv_experiment, outside this repo)
+*.sst
+*.ldb
+MANIFEST-*
+CURRENT
+LOCK
+LOG
+LOG.old.*
+
+# Environment variables
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Gemini agent artifacts
+.gemini/

@@ -23,6 +23,10 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.2)
     ap.add_argument("--max_tokens", type=int, default=900)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--agentic", action="store_true", default=False,
+                    help="Use multi-agent pipeline instead of single-pass LLM.")
+    ap.add_argument("--max_retries", type=int, default=2,
+                    help="Max Evaluator retries per task (agentic mode only).")
 
     args = ap.parse_args()
 
@@ -49,9 +53,13 @@ def main():
         out_name=out_name,
         limit_rows=args.limit_rows,
         seed=args.seed,
+        agentic=args.agentic,
+        max_retries=args.max_retries,
     )
 
-    print(f"Run saved under: {outs.run_dir}")
+    mode_str = "AGENTIC" if args.agentic else "BASELINE"
+
+    print(f"[{mode_str}] Run saved under: {outs.run_dir}")
     print(f"Responses: {outs.responses_jsonl}")
     print(f"Per-sample metrics: {outs.metrics_csv}")
     print(f"Summary: {outs.summary_json}")

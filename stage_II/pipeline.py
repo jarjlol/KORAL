@@ -33,6 +33,11 @@ from stage_II.evaluation.metrics_predictive import confusion_from_labels, mse
 from stage_II.evaluation.metrics_text import bleu4, rouge_l_f1
 from stage_II.evaluation.grounding import faithfulness_precision, counterfactual_validity
 
+# Agentic mode (imported only when needed)
+def _get_orchestrator():
+    from stage_II.agents.orchestrator import Orchestrator
+    return Orchestrator
+
 def _load_text(path: Path) -> str:
     try:
         return Path(path).read_text(encoding="utf-8")
@@ -98,6 +103,8 @@ class Stage2Runner:
         out_name: str,
         limit_rows: Optional[int] = None,
         seed: int = 7,
+        agentic: bool = False,
+        max_retries: int = 2,
     ) -> RunOutputs:
         df = read_csv(input_csv)
         if limit_rows is not None:
@@ -121,6 +128,16 @@ class Stage2Runner:
         metrics_rows = []
 
         rng = seed
+
+        # Create orchestrator if agentic mode
+        orchestrator = None
+        if agentic:
+            OrchestratorClass = _get_orchestrator()
+            orchestrator = OrchestratorClass(
+                llm=self.llm,
+                temperature=self.cfg.temperature,
+                max_retries=max_retries,
+            )
 
         for idx, r in df.iterrows():
             row = r.to_dict()
@@ -170,49 +187,86 @@ class Stage2Runner:
                 available_refs.add(e.id)
 
             # Execute tasks
-            for task in tasks:
-                if task == "predictive":
-                    user = predictive_user_prompt(sample_payload)
-                elif task == "descriptive":
-                    user = descriptive_user_prompt(sample_payload)
-                elif task == "prescriptive":
-                    user = prescriptive_user_prompt(sample_payload)
-                elif task == "whatif":
-                    scenario = str(row.get("whatif_scenario") or _default_whatif_scenario(ir))
-                    user = whatif_user_prompt(sample_payload, scenario)
-                else:
-                    raise ValueError(f"Unknown task: {task}")
-
-                resp = self.llm.chat(
-                    system=sys,
-                    user=user,
-                    temperature=self.cfg.temperature,
-                    max_tokens=self.cfg.max_tokens,
+            if agentic and orchestrator is not None:
+                # ── AGENTIC PATH ───────────────────────────────────────
+                scenario = str(row.get("whatif_scenario") or _default_whatif_scenario(ir))
+                agent_results = orchestrator.run_sample(
+                    ir=ir,
+                    tasks=tasks,
+                    sample_id=sample_id,
+                    sample_payload=sample_payload,
+                    lit_evidence=lit_payload,
+                    available_refs=available_refs,
+                    whatif_scenario=scenario,
                     seed=rng,
                 )
-                rng += 1
+                rng += len(tasks) * 3  # account for multi-agent calls
 
-                parsed = extract_json_object(resp.text) or {"task": task, "sample_id": sample_id, "parse_error": True, "raw_text": resp.text}
+                for ar in agent_results:
+                    parsed = ar["response_json"]
+                    task = ar["task"]
 
-                rows_out.append({
-                    "sample_id": sample_id,
-                    "task": task,
-                    "prompt_terms": terms,
-                    "response_text": resp.text,
-                    "response_json": parsed,
-                })
+                    rows_out.append({
+                        "sample_id": sample_id,
+                        "task": task,
+                        "prompt_terms": terms,
+                        "response_text": str(parsed),
+                        "response_json": parsed,
+                        "agent_trace": ar.get("agent_trace"),
+                    })
 
-                # Metrics per task/sample (computed later more fully)
-                m = {"sample_id": sample_id, "task": task}
-                # FiP / CFV
-                if task in ("descriptive", "prescriptive"):
-                    m["FiP"] = faithfulness_precision(parsed, available_refs)
-                if task == "whatif":
-                    m["CFV"] = counterfactual_validity(parsed, direction_lookup=None)
-                metrics_rows.append(m)
+                    m = {"sample_id": sample_id, "task": task}
+                    if task in ("descriptive", "prescriptive"):
+                        m["FiP"] = faithfulness_precision(parsed, available_refs)
+                    if task == "whatif":
+                        m["CFV"] = counterfactual_validity(parsed, direction_lookup=None)
+                    metrics_rows.append(m)
 
-                # polite pacing
-                time.sleep(0.2)
+            else:
+                # ── BASELINE PATH (vanilla KORAL, unchanged) ──────────
+                for task in tasks:
+                    if task == "predictive":
+                        user = predictive_user_prompt(sample_payload)
+                    elif task == "descriptive":
+                        user = descriptive_user_prompt(sample_payload)
+                    elif task == "prescriptive":
+                        user = prescriptive_user_prompt(sample_payload)
+                    elif task == "whatif":
+                        scenario = str(row.get("whatif_scenario") or _default_whatif_scenario(ir))
+                        user = whatif_user_prompt(sample_payload, scenario)
+                    else:
+                        raise ValueError(f"Unknown task: {task}")
+
+                    resp = self.llm.chat(
+                        system=sys,
+                        user=user,
+                        temperature=self.cfg.temperature,
+                        max_tokens=self.cfg.max_tokens,
+                        seed=rng,
+                    )
+                    rng += 1
+
+                    parsed = extract_json_object(resp.text) or {"task": task, "sample_id": sample_id, "parse_error": True, "raw_text": resp.text}
+
+                    rows_out.append({
+                        "sample_id": sample_id,
+                        "task": task,
+                        "prompt_terms": terms,
+                        "response_text": resp.text,
+                        "response_json": parsed,
+                    })
+
+                    # Metrics per task/sample (computed later more fully)
+                    m = {"sample_id": sample_id, "task": task}
+                    # FiP / CFV
+                    if task in ("descriptive", "prescriptive"):
+                        m["FiP"] = faithfulness_precision(parsed, available_refs)
+                    if task == "whatif":
+                        m["CFV"] = counterfactual_validity(parsed, direction_lookup=None)
+                    metrics_rows.append(m)
+
+                    # polite pacing
+                    time.sleep(0.2)
 
         # Save responses
         append_jsonl(responses_jsonl, rows_out)
