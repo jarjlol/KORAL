@@ -34,11 +34,45 @@ from stage_II.prompts.agent_prompts import (
 )
 from stage_II.utils.json_utils import extract_json_object
 
+# Optional: for targeted literature retrieval
+try:
+    from stage_II.kg.literature_kg import LiteratureKG
+except ImportError:
+    LiteratureKG = None
+
 
 TASK_SYSTEM_PROMPT = """You are a task agent in the KORAL SSD analysis pipeline.
 You receive a pre-synthesized diagnosis and must produce task-specific output.
 Return ONLY valid JSON, no markdown fences.
 If something is unknown, use null and explain in notes or uncertainty fields."""
+
+# SMART ID → human-readable term mapping for literature queries
+SMART_ID_TO_QUERY_TERM = {
+    "r_1": "critical warning",
+    "r_5": "reallocated sectors",
+    "r_9": "power-on hours",
+    "r_12": "power cycle",
+    "r_173": "wear leveling",
+    "r_175": "error log",
+    "r_177": "wear leveling count",
+    "r_187": "uncorrectable errors",
+    "r_188": "command timeout",
+    "r_190": "temperature",
+    "r_192": "unsafe shutdown",
+    "r_194": "temperature",
+    "r_195": "thermal throttle",
+    "r_196": "critical temperature",
+    "r_197": "pending sectors",
+    "r_198": "offline uncorrectable",
+    "r_199": "media errors",
+    "r_231": "SSD life remaining",
+    "r_232": "available spare",
+    "r_233": "media wearout",
+    "r_241": "total LBAs written",
+    "r_242": "total LBAs read",
+    "r_246": "host read commands",
+    "r_247": "host write commands",
+}
 
 
 class Orchestrator:
@@ -57,15 +91,66 @@ class Orchestrator:
         max_retries: int = 2,
         fip_threshold: float = 0.5,
         cfv_threshold: float = 0.4,
+        lit_retriever: Optional[Any] = None,
     ):
         self.llm = llm
         self.temperature = temperature
         self.max_retries = max_retries
+        self.lit_retriever = lit_retriever  # LiteratureKG instance (optional)
 
         # Initialize agents
         self.analyst = TelemetryAnalyst(llm=llm, temperature=temperature)
         self.diagnostician = Diagnostician(llm=llm, temperature=temperature)
         self.evaluator = Evaluator(fip_threshold=fip_threshold, cfv_threshold=cfv_threshold)
+
+    @staticmethod
+    def _extract_query_terms(telemetry_summary: Dict[str, Any]) -> List[str]:
+        """Extract targeted literature query terms from the Analyst's findings.
+
+        Instead of generic terms like ['SMART', 'SSD', 'wear'], this produces
+        terms specific to what the Analyst actually found, e.g.:
+          ['uncorrectable errors', 'temperature', 'thermal stress', 'NAND wear']
+        """
+        terms = set()
+
+        # Always include baseline terms
+        terms.add("SSD")
+
+        # Extract terms from critical signals
+        for sig in telemetry_summary.get("critical_signals", []):
+            attr = sig.get("attribute", "")
+            if attr in SMART_ID_TO_QUERY_TERM:
+                terms.add(SMART_ID_TO_QUERY_TERM[attr])
+
+            severity = sig.get("severity", "")
+            if severity in ("degrading", "critical"):
+                terms.add("failure")
+                terms.add("degradation")
+
+        # Extract terms from cross-correlations
+        for corr in telemetry_summary.get("cross_correlations", []):
+            interp = corr.get("interpretation", "").lower()
+            if "thermal" in interp or "temperature" in interp:
+                terms.add("thermal stress")
+                terms.add("NAND wear")
+            if "wear" in interp:
+                terms.add("wear leveling")
+                terms.add("endurance")
+
+        # Extract from health class
+        health = telemetry_summary.get("drive_health_class", "")
+        if health in ("degrading", "critical"):
+            terms.add("failure prediction")
+            terms.add("remaining useful life")
+        elif health == "watch":
+            terms.add("early warning")
+
+        # Extract from data quality flags
+        for flag in telemetry_summary.get("data_quality_flags", []):
+            if "coverage" in flag.lower():
+                terms.add("data quality")
+
+        return sorted(terms)
 
     def run_sample(
         self,
@@ -96,10 +181,36 @@ class Orchestrator:
         current_seed += 1
         telemetry_summary = analyst_result.output
 
+        # ── Stage 1.5: Targeted Literature Retrieval ──────────────────
+        # Extract query terms from what the Analyst ACTUALLY found,
+        # not generic terms.  Falls back to the generic lit_evidence
+        # if no retriever is available.
+        targeted_terms = self._extract_query_terms(telemetry_summary)
+
+        if self.lit_retriever is not None and hasattr(self.lit_retriever, 'retrieve'):
+            targeted_lit = self.lit_retriever.retrieve(targeted_terms, limit=8)
+            targeted_lit_payload = [
+                {"id": e.id, "text": e.text, "source": e.source}
+                for e in targeted_lit
+            ]
+            # Merge with generic literature, deduplicating by ID
+            seen_ids = {e["id"] for e in targeted_lit_payload}
+            for e in lit_evidence:
+                if e.get("id") not in seen_ids:
+                    targeted_lit_payload.append(e)
+            lit_for_diagnosis = targeted_lit_payload
+        else:
+            # No retriever available — use the generic literature as-is
+            lit_for_diagnosis = lit_evidence
+
+        # Update available refs with any new literature IDs
+        for e in lit_for_diagnosis:
+            available_refs.add(e.get("id", ""))
+
         # ── Stage 2: Diagnostician ─────────────────────────────────────
         diag_result = self.diagnostician.run(
             telemetry_summary=telemetry_summary,
-            literature=lit_evidence,
+            literature=lit_for_diagnosis,
             available_refs=sorted(list(available_refs)),
             seed=current_seed,
         )

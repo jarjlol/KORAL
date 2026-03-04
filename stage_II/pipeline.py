@@ -137,6 +137,7 @@ class Stage2Runner:
                 llm=self.llm,
                 temperature=self.cfg.temperature,
                 max_retries=max_retries,
+                lit_retriever=self.lit,
             )
 
         for idx, r in df.iterrows():
