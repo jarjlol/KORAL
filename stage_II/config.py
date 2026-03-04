@@ -49,6 +49,9 @@ class Stage2Config:
                 "SMART_FT": Path("dataset/alibaba/test_data/smart_ft.csv"),
                 "SMART_AL": Path("dataset/alibaba/test_data/smart_al.csv"),
                 "SMART_FT_ENV_WORKLOAD": Path("dataset/alibaba/test_data/smart_ft_env_workload.csv"),
+
+                # KV workload (Twitter cache-trace + NVMe SMART)
+                "KV_TWITTER": Path("dataset/kv_twitter/koral_kv_dataset.csv"),
             }
 
 def resolve_path(repo_root: Path, p: Path) -> Path:
