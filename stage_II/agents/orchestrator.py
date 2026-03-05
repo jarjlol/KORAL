@@ -26,7 +26,7 @@ from stage_II.agents.diagnostician import Diagnostician
 from stage_II.agents.evaluator import Evaluator
 from stage_II.agents.base import AgentResult
 from stage_II.llm.openai_client import OpenAIChatClient
-from stage_II.prompts.agent_prompts import (
+from stage_II.prompts.prompt_builder import (
     agent_predictive_prompt,
     agent_descriptive_prompt,
     agent_prescriptive_prompt,
